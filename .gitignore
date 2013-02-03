@@ -1,3 +1,6 @@
 *.log
 target/
 src/solr-local/work/
+*.iml
+*.ipr
+*.iws
