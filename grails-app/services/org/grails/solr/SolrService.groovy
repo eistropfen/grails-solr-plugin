@@ -42,15 +42,15 @@ class SolrService {
   boolean transactional = false
   def grailsApplication
   private def servers = [:]
-  
+
   /**
   * Return a SolrServer
   * {@link http://lucene.apache.org/solr/api/org/apache/solr/client/solrj/SolrServer.html}
   */
   def getServer() {
     def url =  (grailsApplication.config.solr?.url) ? grailsApplication.config.solr.url : "http://localhost:8983/solr"
-    def server 
-    
+    def server
+
     // only create a new CommonsHttpSolrServer once per URL since it is threadsafe and this service is a singleton
     // Ref: http://wiki.apache.org/solr/Solrj#CommonsHttpSolrServer
     if( !servers[url] ){
@@ -58,11 +58,11 @@ class SolrService {
     }
     return servers[url]
   }
-  
+
   def getStreamingUpdateServer(queueSize=20, numThreads=3) {
     def url =  (grailsApplication.config.solr?.url) ? grailsApplication.config.solr.url : "http://localhost:8983/solr"
     def server = new StreamingUpdateSolrServer( url, queueSize, numThreads)
-    return server     
+    return server
   }
 
   /**
@@ -74,7 +74,7 @@ class SolrService {
   def search(String query) {
     search( new SolrQuery( query ) )
   }
-  
+
   /**
   * Given SolrQuery object, execute Solr query
   *
@@ -83,14 +83,14 @@ class SolrService {
   */
   def search(SolrQuery solrQuery) {
     QueryResponse rsp = getServer().query( solrQuery );
-    
+
 
     def results = []
     rsp.getResults().each { doc ->
-      def map = [:]     
+      def map = [:]
       doc.getFieldNames().each { it ->
-                
-        // add both the stripped field name and the actual solr field name to 
+
+        // add both the stripped field name and the actual solr field name to
         // the result map... little redundant but greater flexibilty in retrieving
         // results
         def strippedFieldName = SolrUtil.stripFieldName(it)
@@ -99,20 +99,20 @@ class SolrService {
           map."${it}" = doc.getFieldValue(it)
       }
       map.id = SolrUtil.parseSolrId(doc.getFieldValue("id"))?.id
-      
+
       // Add the SolrDocument to the map as well
       // http://lucene.apache.org/solr/api/org/apache/solr/common/SolrDocument.html
       map.solrDocument = doc
-    
+
       results << map
     }
-     
-    return new SearchResults(resultList: results, queryResponse: rsp); 
-      
+
+    return new SearchResults(resultList: results, queryResponse: rsp);
+
   }
-    
+
   /**
-  * Constitute SolrQuery for a haversine based spatial search. This method returns 
+  * Constitute SolrQuery for a haversine based spatial search. This method returns
   * the SolrQuery object in case you need to manipulate it further (add facets, etc)
   *
   * @param query  a lucene formatted query to execute in addition to the location range query
@@ -127,16 +127,16 @@ class SolrService {
   * @param lat_field SOLR index field for latitude in radians (optional, default: latitude_d)
   * @param lng_field SOLR index field for latitude in radians (optional, default: longitude_d)
   * @return SolrQuery object representing this spatial query
-  */  
+  */
   SolrQuery getSpatialQuery(query, lat, lng, range, start=0, rows=10, sort="asc", funcQuery="", radius=3963.205, lat_field="latitude_rad_d", lng_field="longitude_rad_d") {
     def lat_rad = Math.toRadians( lat )
     def lng_rad = Math.toRadians( lng )
     def hsin = "hsin(${lat_rad},${lng_rad},${lat_field},${lng_field},${radius})"
     def order = [asc: SolrQuery.ORDER.asc, desc: SolrQuery.ORDER.desc]
-    
+
     if(funcQuery != "")
       funcQuery = "${funcQuery},"
-    
+
     SolrQuery solrQuery = new SolrQuery( (query && query.trim()) ? "(${query}) AND _val_:\"sum(${funcQuery}${hsin})\"" : "_val_:\"sum(${funcQuery}${hsin})\"" )
     solrQuery.addFilterQuery("{!frange l=0 u=${range}}${hsin}")
     solrQuery.setStart(start)
@@ -144,7 +144,7 @@ class SolrService {
     solrQuery.addSortField("score", order[sort])
     return solrQuery
   }
-  
+
   /**
   * Same as getSpatialQuery but executes query
   * @return Map with 'resultList' - list of Maps representing results and 'queryResponse' - Solrj query result
@@ -152,21 +152,28 @@ class SolrService {
   def querySpatial(query, lat, lng, range, start=0, rows=10, sort="asc", funcQuery="", radius=3963.205, lat_field="latitude_rad_d", lng_field="longitude_rad_d") {
     def solrQuery = getSpatialQuery(query, lat, lng, range, start, rows, sort, funcQuery, radius, lat_field, lng_field)
     return querySpatial(solrQuery, lat, lng, lat_field, lng_field)
-  } 
+  }
 
   /**
-  * Expected to be called after getSpatialQuery, assuming you need to further 
-  * manipulate the SolrQuery object before executing the query. 
+  * Expected to be called after getSpatialQuery, assuming you need to further
+  * manipulate the SolrQuery object before executing the query.
   * @return Map with 'resultList' - list of Maps representing results and 'queryResponse' - Solrj query result
-  */  
+  */
   def querySpatial(SolrQuery solrQuery, lat, lng, lat_field="latitude_rad_d", lng_field="longitude_rad_d") {
-    log.debug ("spatial query: ${solrQuery}")  
+    log.debug ("spatial query: ${solrQuery}")
     def result = search(solrQuery)
     result.resultList.each {
       it.dist = Haversine.computeMi(lat, lng, Math.toDegrees(it."${SolrUtil.stripFieldName(lat_field)}"), Math.toDegrees(it."${SolrUtil.stripFieldName(lng_field)}"))
     }
-    return result   
+    return result
   }
+
+    def deleteAll() {
+        def server = getServer()
+        log.info("Deleting all document in Solr index")
+        server?.deleteByQuery('*:*')
+        server?.commit()
+    }
 
   /**
    * Perform bulk indexing of domain objects.
@@ -182,6 +189,8 @@ class SolrService {
     def server = getServer()
 
     if (!dcs) {
+      // delete old index
+      deleteAll()
       dcs = grailsApplication.domainClasses
     }
 
@@ -190,152 +199,51 @@ class SolrService {
     dcs.each { dc ->
       def dcz = dc.clazz
       if (!dcz.name.startsWith(myPackageName) && (GrailsClassUtils.getStaticPropertyValue(dc.clazz, "enableSolrSearch"))) {
+        def meta = new ClassSolrMeta()
+        def solrExtractors = grailsApplication.mainContext.getBean("solrExtractors")
+        solrExtractors.each { extractor ->
+          def innerMeta = extractor.extractSolrMeta(dcz, '', '')
+          meta.fields += innerMeta.fields
+        }
 
-        // TODO:  OO-ified
-        def fields = ['id']
-        def fieldAsTextAlso = [false]
-        def fieldToSolrField = [:]
-        def fieldComponent = [false]
-        dc.properties.each { prop ->
-
-          if (!SolrUtil.IGNORED_PROPS.contains(prop.name) && prop.type != java.lang.Object) {
-            def solrFieldName = dcz.solrFieldName(prop.name);
-            if (solrFieldName) {
-              // processing @Solr(asTextAlso)
-              def asTextAlso = false
-              def clazzProp = dcz.declaredFields.find{ field -> field.name == prop.name}
-              if (clazzProp.isAnnotationPresent(Solr) && clazzProp.getAnnotation(Solr).asTextAlso()) {
-                asTextAlso = true
-              }
-              fieldAsTextAlso << asTextAlso
-
-              // processing @Solr(prefix)
-              if (clazzProp.isAnnotationPresent(Solr) && clazzProp.getAnnotation(Solr).prefix()) {
-                prefix += clazzProp.getAnnotation(Solr).prefix()
-              }
-
-              // processing @Solr(component)
-              def isComponent = false
-              if (clazzProp.isAnnotationPresent(Solr) && DomainClassArtefactHandler.isDomainClass(prop.type) &&
-                      clazzProp.getAnnotation(Solr).component()) {
-                isComponent = true
-              }
-              fieldComponent << isComponent
-
-              fields << prop.name
-              fieldToSolrField[prop.name] = solrFieldName
-
-              println "proccessing ${dcz.name} - ${prop.name} : ${solrFieldName}, ${asTextAlso}"
-            }
+        Set outerJoinList = []
+        def fields = meta?.fields?.collect { field ->
+          if (field.parentPropertyName) {
+             outerJoinList << field.parentPropertyName
           }
+          field.parentPropertyName ?
+              "${field.parentPropertyName}.${field.propertyName}" : field.propertyName
         }
 
         def columnsString = fields.collect { "t.${it}" }.join(", ")
-        def query = "select ${columnsString} from ${dcz.name} t"
+        def query = "select t.id, ${columnsString} from ${dcz.name} t ${outerJoinList?.collect { "left outer join t.${it}"}.join(" ")}"
+        log.trace("Query: ${query}")
         def results = dcz.executeQuery(query)
+        log.trace("Executed '${query}' and got ${results?.size()} results")
         results.eachWithIndex { result, index ->
           def doc = new SolrInputDocument();
 
           result.eachWithIndex { fieldValue, fieldIdx ->
             if (fieldIdx != 0) { // skip id field
-              def fieldName = fields[fieldIdx]
-              def docKey = prefix + fieldToSolrField[fieldName]
-              def docValue = fieldValue
-
-              // then set the value to the Solr Id
-              if (docValue && DomainClassArtefactHandler.isDomainClass(docValue.class)) {
-                if (fieldComponent[fieldIdx]) {
-                } else {
-                  // doc.addField(docKey, SolrUtil.getSolrId(docValue))
-                }
-              } else {
-                doc.addField(docKey, docValue)
-              }
-
-              if (fieldAsTextAlso[fieldIdx]) {
-                doc.addField("${prefix}${fieldName}_t", docValue)
-              }
+              def fieldMeta = meta?.fields[fieldIdx - 1]
+              SolrUtil.addFieldToDoc(doc, fieldMeta, fieldValue, prefix)
             }
           }
 
-          // add a field to the index for the field ype
-          doc.addField(prefix + SolrUtil.TYPE_FIELD, dcz.name)
+          // add a field to the index for the field type
+          SolrUtil.addTypeToDoc(doc, dcz, prefix)
 
           // add a field for the id which will be the classname dash id
-          doc.addField("${prefix}id", "${dcz.name}-${result.getAt(0)}")
+          SolrUtil.addIdToDoc(doc, dcz, result.getAt(0), prefix)
 
           server.add(doc)
 
           if (index % BATCH_SIZE == 0 || (index + 1) == results.size()) {
-            println "[${new Date().time}] - indexing ${index} of ${dcz.name}"
+            log.trace "[${new Date().time}] - indexing ${index} of ${dcz.name}"
             server.commit()
           }
         }
       }
     }
-  }
-
-  ClassSolrMeta extractSolrMeta(ClassSolrMeta meta, Class dc, int depth) {
-    def dcz = dc.clazz
-    dc.properties.each { prop ->
-      if (!SolrUtil.IGNORED_PROPS.contains(prop.name) && prop.type != java.lang.Object) {
-        def solrFieldName = dcz.solrFieldName(prop.name);
-        if (solrFieldName) {
-
-          // processing @Solr(asTextAlso)
-          def asTextAlso = false
-          def clazzProp = dcz.declaredFields.find{ field -> field.name == prop.name}
-          if (clazzProp.isAnnotationPresent(Solr) && clazzProp.getAnnotation(Solr).asTextAlso()) {
-            asTextAlso = true
-          }
-          fieldAsTextAlso << asTextAlso
-
-          // processing @Solr(prefix)
-          if (clazzProp.isAnnotationPresent(Solr) && clazzProp.getAnnotation(Solr).prefix()) {
-            prefix += clazzProp.getAnnotation(Solr).prefix()
-          }
-
-          // processing @Solr(component)
-          def isComponent = false
-          if (clazzProp.isAnnotationPresent(Solr) && DomainClassArtefactHandler.isDomainClass(prop.type) &&
-                  clazzProp.getAnnotation(Solr).component()) {
-            isComponent = true
-          }
-          fieldComponent << isComponent
-
-          fields << prop.name
-          fieldToSolrField[prop.name] = solrFieldName
-
-          println "proccessing ${dcz.name} - ${prop.name} : ${solrFieldName}, ${asTextAlso}"
-        }
-      }
-    }
-    return meta
-  }
-
-  class ClassSolrMeta {
-    private List<FieldSolrMeta> fields = []
-
-    void addFieldMeta(FieldSolrMeta field) {
-      fields << field
-    }
-
-    String buildHQL() {
-      def query = ''
-      return query
-    }
-
-    SolrInputDocument buildDoc() {
-      def doc = new SolrInputDocument()
-      return doc
-    }
-  }
-
-  class FieldSolrMeta {
-    String fieldName
-    String solrFieldName
-    String prefix
-    boolean component
-    boolean asTextAlso
   }
 }
