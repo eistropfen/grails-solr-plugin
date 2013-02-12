@@ -82,6 +82,13 @@ open source search server through the SolrJ library.
 //         }
 //      } catch (Exception e) {/* swallow and use default */}
 
+      xmlns util:"http://www.springframework.org/schema/util"
+
+      defaultSolrMetaExtractor(SolrMetaExtractor)
+
+      util.list(id: 'solrExtractors') {
+        ref(bean:'defaultSolrMetaExtractor')
+      }
     }
 
     def doWithApplicationContext = { applicationContext ->
