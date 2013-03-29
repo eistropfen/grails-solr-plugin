@@ -42,7 +42,7 @@ import org.apache.log4j.Logger
 
 class SolrGrailsPlugin {
     // the plugin version
-    def version = "0.3"
+    def version = "0.4"
     // the version or versions of Grails the plugin is designed for
     def grailsVersion = "1.1 > *"
     // the other plugins this plugin depends on
@@ -92,7 +92,8 @@ open source search server through the SolrJ library.
     }
 
     def doWithApplicationContext = { applicationContext ->
-
+      //@HL CONFIG
+      if (application.config.solr.server.unavailable) return
       if (Environment.current != Environment.TEST) {
         // add the event listeners for reindexing on change
         def listeners = applicationContext.sessionFactory.eventListeners
@@ -257,7 +258,7 @@ open source search server through the SolrJ library.
         listeners."${typeProperty}" = expandedTypeListeners
     }
 
-  private indexDomain(application, delegateDomainOjbect, doc, depth = 1, prefix = "") {
+  private indexDomain(application, delegateDomainObject, doc, depth = 1, prefix = "") {
     def clazz = (delegateDomainObject.class.name == 'java.lang.Class') ? delegateDomainObject : delegateDomainObject.class
 
     def meta = new ClassSolrMeta()
@@ -285,8 +286,8 @@ open source search server through the SolrJ library.
     SolrUtil.addIdToDoc(doc, clazz, delegateDomainObject.id, prefix)
 
     if(doc.getField(SolrUtil.TITLE_FIELD) == null) {
-      def solrTitleMethod = delegateDomainOjbect.metaClass.pickMethod("solrTitle")
-      def solrTitle = (solrTitleMethod != null) ? solrTitleMethod.invoke(delegateDomainOjbect) : delegateDomainOjbect.toString()
+      def solrTitleMethod = delegateDomainObject.metaClass.pickMethod("solrTitle")
+      def solrTitle = (solrTitleMethod != null) ? solrTitleMethod.invoke(delegateDomainObject) : delegateDomainObject.toString()
       doc.addField(SolrUtil.TITLE_FIELD, solrTitle)
     }
   } // indexDomain
