@@ -1,4 +1,3 @@
-<%@ page import="com.piragua.sakila.Film" %>
 <html>
 <head>
     <title>Search Solr</title>
